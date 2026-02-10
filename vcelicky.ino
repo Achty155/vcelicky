@@ -68,6 +68,11 @@ DFRobot_ENS160_I2C ENS160(&Wire, /*I2CAddr*/ 0x53);
 #define SLEEPING_ITERATIONS 112  //112 = (roughly 15 minutes)
 
 
+//Set this according to your ThingsBoard
+#define SERVER_IP "147.175.150.184:8080"
+#define DEVICE_TOKEN "o84l0slh4nri8ptjy1sq"
+
+
 //Size of cache
 #define CACHE_NUMBER 100
 
@@ -390,7 +395,7 @@ bool sendMessage(String message, int temperatureIn, int humidityIn, int temperat
   readResponse();
 
   //Defines the target URL for an HTTP request
-  sendCommand("AT+HTTPPARA=\"URL\",\"http://147.175.150.184:8080/api/v1/o84l0slh4nri8ptjy1sq/telemetry\"", 500);
+  sendCommand("AT+HTTPPARA=\"URL\",\"http://" SERVER_IP "/api/v1/" DEVICE_TOKEN "/telemetry\"" 500);
   readResponse();
 
 
@@ -760,7 +765,7 @@ bool sendCachedMessage(int index, uint64_t timestamp) {
   sendCommand("AT+HTTPPARA=\"CID\",1", 500);
   readResponse();
 
-  sendCommand("AT+HTTPPARA=\"URL\",\"http://147.175.150.184:8080/api/v1/o84l0slh4nri8ptjy1sq/telemetry\"", 500);
+  sendCommand("AT+HTTPPARA=\"URL\",\"http://" SERVER_IP "/api/v1/" DEVICE_TOKEN "/telemetry\"" 500);
   readResponse();
 
   sendCommand("AT+HTTPPARA=\"CONTENT\",\"application/json\"", 500);
