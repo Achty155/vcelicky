@@ -39,8 +39,11 @@ double vImag[SAMPLES];  //vector of imaginary values
 
 
 //MPU6050
-#define MOTION_LIMIT 0.2
-MPU6050 accelgyro;
+//#define MOTION_LIMIT 0.2
+//MPU6050 accelgyro;
+
+//TILT SENSOR
+#define TILT_PIN 2
 
 
 float default_accX = 0;
@@ -143,7 +146,6 @@ String readResponseAsStringFixed(unsigned long timeout = 2000) {
     if (a7670.available()) {
       char c = a7670.read();
       response += c;
-      // tu NEresetuj start
     }
   }
   return response;
@@ -483,7 +485,6 @@ bool sendMessage(String message, int temperatureIn, int humidityIn, int temperat
 
 
 
-//✔️HOTOVA✔️
 uint64_t parseUInt64(String s) {
   uint64_t value = 0;
   for (int i = 0; i < s.length(); i++) {
@@ -815,7 +816,7 @@ bool sendCachedMessage(int index, uint64_t timestamp) {
 
 
 //Calibration of MPU6050
-void mpu6050_Calibrate() {
+/*void mpu6050_Calibrate() {
   accelgyro.CalibrateGyro();
   accelgyro.CalibrateAccel();
   int16_t ax, ay, az;
@@ -829,7 +830,7 @@ void mpu6050_Calibrate() {
   Serial.print(default_accY);
   Serial.print(F(" | aZ = "));
   Serial.println(default_accZ);
-}
+}*/
 
 
 
@@ -837,7 +838,7 @@ void mpu6050_Calibrate() {
 
 
 //Returns true if the MPU6050 has moved beyond the defined motion threshold
-bool isMoved(int16_t ax, int16_t ay, int16_t az) {
+/*bool isMoved(int16_t ax, int16_t ay, int16_t az) {
   float ax_g = ax / 16384.0;
   float ay_g = ay / 16384.0;
   float az_g = az / 16384.0;
@@ -847,7 +848,7 @@ bool isMoved(int16_t ax, int16_t ay, int16_t az) {
   float changeZ = fabs(default_accZ - az_g);
 
   return (changeX > MOTION_LIMIT || changeY > MOTION_LIMIT || changeZ > MOTION_LIMIT);
-}
+}*/
 
 
 
@@ -910,7 +911,7 @@ void setup() {
 
 
   //MPU6050
-  while (!Serial)
+  /*while (!Serial)
     ;
 
   accelgyro.initialize();
@@ -924,7 +925,7 @@ void setup() {
   }
 
   Serial.println(F("MPU6050 initialized."));
-  mpu6050_Calibrate();
+  mpu6050_Calibrate();*/
 
   //ENS160
   while( NO_ERR != ENS160.begin() ){
@@ -1120,15 +1121,24 @@ void loop() {
 
 
 
-  //MPU6050 chcecking if hive is rolled
-  accelgyro.setSleepEnabled(0);
+  //MPU6050 checking if hive is rolled
+  /*accelgyro.setSleepEnabled(0);
   delay(50);
 
   int16_t ax, ay, az;
   accelgyro.getAcceleration(&ax, &ay, &az);
   movedHive = isMoved(ax, ay, az);
 
-  accelgyro.setSleepEnabled(1);
+  accelgyro.setSleepEnabled(1);*/
+
+  //TILT sensor checking if hive is rolled
+  if (digitalRead(TILT_PIN) == LOW) {
+    movedHive = true;
+  } else {
+    movedHive = false;
+  }
+
+
 
 
   //ENS160 measuring
