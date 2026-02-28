@@ -6,6 +6,7 @@
 #include "MPU6050.h"
 #include "HX711.h"
 #include <DFRobot_ENS160.h>
+#include "RTClib.h"
 
 #include "string.h"
 
@@ -38,12 +39,11 @@ double vReal[SAMPLES];  //vector of real values
 double vImag[SAMPLES];  //vector of imaginary values
 
 
-//MPU6050
-//#define MOTION_LIMIT 0.2
-//MPU6050 accelgyro;
-
 //TILT SENSOR
 #define TILT_PIN 2
+
+//RTC module
+RTC_DS3231 rtc;
 
 
 float default_accX = 0;
@@ -517,108 +517,6 @@ String u64ToString(uint64_t value) {
 
 
 
-//Get the current Unix timestamp from the HTTP RPC response
-uint64_t getTimestamp() {
-  //terminate original HTTP connection
-  sendCommand("AT+HTTPTERM");
-
-  while (a7670.available()) a7670.read();
-
-
-  sendCommand("AT+HTTPINIT", 1000);
-  readResponse();
-
-  sendCommand("AT+HTTPPARA=\"CID\",1", 500);
-  readResponse();
-
-  //enter the url parameter (url for rpc api)
-  sendCommand("AT+HTTPPARA=\"URL\",\"http://147.175.150.184:8080/api/v1/o84l0slh4nri8ptjy1sq/rpc\"", 500);
-  readResponse();
-
-  sendCommand("AT+HTTPPARA=\"CONTENT\",\"application/json\"", 500);
-  readResponse();
-
-
-
-  //sent JSON file is an RPC request to get a timestamp
-  String message = "{\"method\":\"getCurrentTime\",\"params\":{}}";
-
-
-  byte attempt = 0;
-  String response;
-
-  while (attempt < 3) {
-
-    sendCommand("AT+HTTPDATA=" + String(message.length()) + ",10000", 100);
-
-    //waiting to "DOWNLOAD" prompt
-    unsigned long start = millis();
-    while (millis() - start < 3000) {
-      if (a7670.available()) {
-        String r = readResponseAsString(500);
-        if (r.indexOf("DOWNLOAD") >= 0) break;
-      }
-    }
-
-
-    Serial.println(F("Odosielam dáta..."));
-    a7670.print(message);
-    delay(500);
-
-    //send request to ThingsBoard
-    //Serial.println(F("Spúšťam HTTPACTION=1 (POST)..."));
-    sendCommand("AT+HTTPACTION=1");
-
-    String actionResp = readResponseAsString(5000);
-
-    /*int method, httpCode, length;
-    sscanf(actionResp.c_str(), "+HTTPACTION: %d,%d,%d", &method, &httpCode, &length);
-
-    Serial.print("Dĺžka JSON: ");
-    Serial.println(length);*/
-
-    sendCommand("AT+HTTPREAD=0," + String(23), 500);
-
-    String response = readResponseAsString(5000);
-
-    Serial.println(response);
-
-    // Nájdeme "timestamp":
-    int pos = response.indexOf("\"time\":");
-
-    if (pos != -1) {
-
-      pos += 7;  // move behind "time":
-      int end = response.indexOf("}", pos);
-      String t = response.substring(pos, end);
-      t.trim();
-      uint64_t timestamp = parseUInt64(t);
-
-
-      char tsBuf[24];
-      Serial.println("debug");
-      String tsStr = u64ToString(timestamp);
-
-
-      sendCommand("AT+HTTPTERM");
-      while (a7670.available()) a7670.read();
-      return timestamp;  // return the entire 13-digit number
-    }
-
-    Serial.println(F("Timestamp sa nenasiel, opakujem..."));
-    attempt++;
-  }
-
-
-  sendCommand("AT+HTTPTERM");
-  while (a7670.available()) a7670.read();
-  return 0;
-}
-
-
-
-
-
 
 
 
@@ -689,8 +587,14 @@ void sendCache() {
 
   const uint64_t STEP = 896000ULL;
 
-  check_internet_connection();
-  uint64_t nowTs = getTimestamp();
+
+  DateTime now = rtc.now();
+  // Unix timestamp in seconds
+  uint32_t epochSeconds = now.unixtime();
+  // Convert to milliseconds (13-digit format)
+  uint64_t nowTs = (uint64_t)epochSeconds * 1000ULL;
+
+
   if (nowTs == 0) return;
 
   nowTs -= STEP;
@@ -813,53 +717,6 @@ bool sendCachedMessage(int index, uint64_t timestamp) {
 
 
 
-
-
-//Calibration of MPU6050
-/*void mpu6050_Calibrate() {
-  accelgyro.CalibrateGyro();
-  accelgyro.CalibrateAccel();
-  int16_t ax, ay, az;
-  accelgyro.getAcceleration(&ax, &ay, &az);
-  default_accX = ax / 16384.0;
-  default_accY = ay / 16384.0;
-  default_accZ = az / 16384.0;
-  Serial.print(F("Calibration aX = "));
-  Serial.print(default_accX);
-  Serial.print(F(" | aY = "));
-  Serial.print(default_accY);
-  Serial.print(F(" | aZ = "));
-  Serial.println(default_accZ);
-}*/
-
-
-
-
-
-
-//Returns true if the MPU6050 has moved beyond the defined motion threshold
-/*bool isMoved(int16_t ax, int16_t ay, int16_t az) {
-  float ax_g = ax / 16384.0;
-  float ay_g = ay / 16384.0;
-  float az_g = az / 16384.0;
-
-  float changeX = fabs(default_accX - ax_g);
-  float changeY = fabs(default_accY - ay_g);
-  float changeZ = fabs(default_accZ - az_g);
-
-  return (changeX > MOTION_LIMIT || changeY > MOTION_LIMIT || changeZ > MOTION_LIMIT);
-}*/
-
-
-
-
-
-
-
-
-
-
-
 void enterSleep(void) {
 
 
@@ -897,35 +754,21 @@ ISR(WDT_vect) {
 
 
 
-
-
-
 void setup() {
   Serial.begin(9600);
   a7670.begin(115200);
 
   Wire.begin();
 
+  //initialization of RTC module
+  if (!rtc.begin()) {
+    Serial.println("RTC nenajdene!");
+    while (1);
+  }
+
   //MAX9814 - calculation of sampling period
   samplingPeriod = round(1000000 * (1.0 / SAMPLING_FREQUENCY));
 
-
-  //MPU6050
-  /*while (!Serial)
-    ;
-
-  accelgyro.initialize();
-
-  Serial.println(F("Initializing MPU6050..."));
-
-  if (!accelgyro.testConnection()) {
-    Serial.println(F("MPU6050 connection failed!"));
-    while (1)
-      ;
-  }
-
-  Serial.println(F("MPU6050 initialized."));
-  mpu6050_Calibrate();*/
 
   //ENS160
   while( NO_ERR != ENS160.begin() ){
@@ -1140,7 +983,6 @@ void loop() {
 
 
 
-
   //ENS160 measuring
   ENS160.setTempAndHum(/*temperature=*/temperatureInF, /*humidity=*/humidityInF);
 
@@ -1155,8 +997,6 @@ void loop() {
   ECO2 = ENS160.getECO2();
 
   ENS160.setPWRMode(ENS160_IDLE_MODE);
-
-
 
 
 
@@ -1197,10 +1037,6 @@ void loop() {
   //first false means we don't cache, second false can also be true (indicates which time is used for caching)
   String message = messageConvert(temperatureIn, humidityIn, temperatureOut, humidityOut, movedHive, peakFrequency, weight, TVOC, ECO2, false, false);
 
-  //nepotrebne odstranit ked bude sa vracat kod 200
-  //Serial.println(message);
-  //Serial.print(F("message length: "));
- // Serial.println(message.length());
 
   //sending message
   delay(20000);  //delay for waking of 4g module
