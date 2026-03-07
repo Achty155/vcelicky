@@ -246,6 +246,12 @@ String messageConvert(int temperatureIn, int humidityIn, int temperatureOut, int
 //Check if module is connected to network
 bool check_internet_connection() {
 
+  //Print signal strength - dev command
+  Serial.println(F("Sila signalu"));
+  sendCommand("AT+CSQ");
+  readResponse();
+
+
   //Serial.println(F("Kontrola či je zadaný pin"));
 
   sendCommand("AT+CPIN?");
@@ -261,12 +267,12 @@ bool check_internet_connection() {
 
   //Set module to LTE only
   //Serial.println(F("Nastavenie LTE only"));
-  sendCommand("AT+CNMP=38");
+  sendCommand("AT+CNMP=2", 5000);
   readResponse();
 
   //APN setting
   //Serial.println(F("Nastavenie APN"));
-  sendCommand("AT+CGDCONT=1,\"IP\",\"internet\"");
+  sendCommand("AT+CGDCONT=1,\"IP\",\"internet\"", 20000);
   readResponse();
 
   //Print actual APN settings - dev command
@@ -279,9 +285,10 @@ bool check_internet_connection() {
   sendCommand("AT+CREG=2");
   readResponse();*/
 
-  //Print signal strength - dev command
-  Serial.println(F("Sila signalu"));
-  sendCommand("AT+CSQ");
+
+  //Print if module is registered in network - dev command
+  Serial.println(F("Kontrola siete: AT+CREG?"));
+  sendCommand("AT+CREG?");
   readResponse();
 
   //Print available networks - dev command
@@ -289,10 +296,6 @@ bool check_internet_connection() {
   sendCommand("AT+COPS?");
   readResponse();
 
-  //Print if module is registered in network - dev command
-  Serial.println(F("Kontrola siete: AT+CREG?"));
-  sendCommand("AT+CREG?");
-  readResponse();
 
   //Connect module to GRPS
   //Serial.println(F("Attach na GPRS: AT+CGATT=1"));
@@ -728,14 +731,14 @@ void rtcISR() {
 void goToSleep() {
 
   DateTime now = rtc.now();
-  DateTime future = now + TimeSpan(0, 0, 1, 0);
+  DateTime future = now + TimeSpan(0, 0, 1, 0); //set to 15
 
 
   rtc.clearAlarm(1);
   rtc.setAlarm1(future, DS3231_A1_Second);
   rtc.writeSqwPinMode(DS3231_OFF);
 
-  ADCSRA &= ~(1 << ADEN);   // vypnúť ADC
+  ADCSRA &= ~(1 << ADEN);   // ADC off
   power_adc_disable();
   power_spi_disable();
   power_timer1_disable();
@@ -748,14 +751,14 @@ void goToSleep() {
 
   attachInterrupt(digitalPinToInterrupt(INT_PIN), rtcISR, FALLING);
 
-  sleep_cpu();   // MCU zaspí tu
+  sleep_cpu();   // MCU falls asleep here
 
   sleep_disable();
   detachInterrupt(digitalPinToInterrupt(INT_PIN));
 
 
   power_all_enable();
-  ADCSRA |= (1 << ADEN);   // zapnúť ADC
+  ADCSRA |= (1 << ADEN);   // ADC on
 
   Wire.begin();
 
@@ -851,7 +854,7 @@ void setup() {
   pinMode(DnM_PIN, OUTPUT);
   digitalWrite(DnM_PIN, HIGH);
 
-  delay(200000); //tu bolo dlhse 200000
+  delay(200000); 
 }
 
 
