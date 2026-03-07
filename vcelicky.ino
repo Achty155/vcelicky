@@ -13,7 +13,6 @@
 //Libs for arduino sleep
 #include <avr/sleep.h>
 #include <avr/power.h>
-#include <avr/wdt.h>
 
 
 //DHT22
@@ -43,7 +42,10 @@ double vImag[SAMPLES];  //vector of imaginary values
 #define TILT_PIN 2
 
 //RTC module
+#define INT_PIN 18
 RTC_DS3231 rtc;
+volatile bool rtcAlarm = false;
+
 
 
 float default_accX = 0;
@@ -52,7 +54,7 @@ float default_accZ = 0;
 
 
 //a7670
-#define a7670 Serial1
+#define a7670 Serial2
 #define fourG_PIN 34
 
 
@@ -397,7 +399,7 @@ bool sendMessage(String message, int temperatureIn, int humidityIn, int temperat
   readResponse();
 
   //Defines the target URL for an HTTP request
-  sendCommand("AT+HTTPPARA=\"URL\",\"http://" SERVER_IP "/api/v1/" DEVICE_TOKEN "/telemetry\"" 500);
+  sendCommand("AT+HTTPPARA=\"URL\",\"http://" SERVER_IP "/api/v1/" DEVICE_TOKEN "/telemetry\"", 500);
   readResponse();
 
 
@@ -670,7 +672,7 @@ bool sendCachedMessage(int index, uint64_t timestamp) {
   sendCommand("AT+HTTPPARA=\"CID\",1", 500);
   readResponse();
 
-  sendCommand("AT+HTTPPARA=\"URL\",\"http://" SERVER_IP "/api/v1/" DEVICE_TOKEN "/telemetry\"" 500);
+  sendCommand("AT+HTTPPARA=\"URL\",\"http://" SERVER_IP "/api/v1/" DEVICE_TOKEN "/telemetry\"", 500);
   readResponse();
 
   sendCommand("AT+HTTPPARA=\"CONTENT\",\"application/json\"", 500);
@@ -717,36 +719,53 @@ bool sendCachedMessage(int index, uint64_t timestamp) {
 
 
 
-void enterSleep(void) {
 
-
-  for (int a = 0; a < SLEEPING_ITERATIONS; a = a + 1) {
-
-    //Serial.println("I will go sleep now");
-    //delay(1000); //allow for serial print to complete
-
-    set_sleep_mode(SLEEP_MODE_PWR_DOWN);  //set sleep mode to lowest power consumption possible
-    sleep_enable();                       // tells the core that it can sleep
-
-    //now enter sleep mode
-    sleep_mode();
-
-    //program will continue from here after the WDT timeout
-    sleep_disable();  //exit sleep mode
-
-    //re-enable the peripherals
-    power_all_enable();
-
-    //Serial.println("Good morning, good morning :-) ");
-  }
-
-
-  //delay(2000);
+void rtcISR() {
+  rtcAlarm = true;
 }
 
-//Watchdog Timer interrupt – wakes Arduino from sleep, nothing else needs to be there
-ISR(WDT_vect) {
+
+void goToSleep() {
+
+  DateTime now = rtc.now();
+  DateTime future = now + TimeSpan(0, 0, 1, 0);
+
+
+  rtc.clearAlarm(1);
+  rtc.setAlarm1(future, DS3231_A1_Second);
+  rtc.writeSqwPinMode(DS3231_OFF);
+
+  ADCSRA &= ~(1 << ADEN);   // vypnúť ADC
+  power_adc_disable();
+  power_spi_disable();
+  power_timer1_disable();
+  power_timer2_disable();
+  power_twi_disable();
+
+
+  set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+  sleep_enable();
+
+  attachInterrupt(digitalPinToInterrupt(INT_PIN), rtcISR, FALLING);
+
+  sleep_cpu();   // MCU zaspí tu
+
+  sleep_disable();
+  detachInterrupt(digitalPinToInterrupt(INT_PIN));
+
+
+  power_all_enable();
+  ADCSRA |= (1 << ADEN);   // zapnúť ADC
+
+  Wire.begin();
+
+  delay(50);
+  rtc.clearAlarm(1);
 }
+
+
+
+
 
 
 
@@ -760,11 +779,29 @@ void setup() {
 
   Wire.begin();
 
+
   //initialization of RTC module
   if (!rtc.begin()) {
     Serial.println("RTC nenajdene!");
     while (1);
   }
+
+
+  rtc.disableAlarm(1);
+  rtc.disableAlarm(2);
+  rtc.clearAlarm(1);
+  rtc.clearAlarm(2);
+
+  
+  if (rtc.lostPower()) {
+    Serial.println("RTC stratilo napajanie, nastavujem cas!");
+    rtc.adjust(DateTime(F(__DATE__), F(__TIME__))); 
+    // nastaví čas podľa času kompilácie
+  }
+
+  //sleep init
+  pinMode(INT_PIN, INPUT_PULLUP);
+
 
   //MAX9814 - calculation of sampling period
   samplingPeriod = round(1000000 * (1.0 / SAMPLING_FREQUENCY));
@@ -807,36 +844,14 @@ void setup() {
 
   scale.begin(DT_PIN, SCK_PIN, 128);
   scale.set_scale();
-  scale.tare();  // zero point setting
+  scale.tare();  //zero point setting
 
   delay(200);
 
   pinMode(DnM_PIN, OUTPUT);
   digitalWrite(DnM_PIN, HIGH);
 
-
-
-
-
-  //clear the reset flag
-  MCUSR &= ~(1 << WDRF);
-
-  //in order to change WDE or the prescaler, we need to set WDCE (This will allow updates for 4 clock cycles)
-  WDTCSR |= (1 << WDCE) | (1 << WDE);
-
-  //set new watchdog timeout prescaler value
-  WDTCSR = 1 << WDP0 | 1 << WDP3;  //8.0 seconds // NOTE from JP: this is not exactly 8.0 !, also seems to pauze system clock during sleep
-
-  //Enable the WD interrupt (note no reset)
-  WDTCSR |= _BV(WDIE);
-
-
-  /*Serial.println(F("SRAM check:"));
-  extern int __heap_start, *__brkval;
-  int v;
-  int freeMem = (int)&v - (__brkval == 0 ? (int)&__heap_start : (int)__brkval);
-  Serial.println(freeMem);*/
-  delay(200000);
+  delay(200000); //tu bolo dlhse 200000
 }
 
 
@@ -844,6 +859,7 @@ void setup() {
 
 
 void loop() {
+
   int humidityOut = 0;
   int temperatureOut = 0;
   int humidityIn = 0;
@@ -962,18 +978,6 @@ void loop() {
   Serial.println(F("DnM POWER OFF"));
 
 
-
-
-  //MPU6050 checking if hive is rolled
-  /*accelgyro.setSleepEnabled(0);
-  delay(50);
-
-  int16_t ax, ay, az;
-  accelgyro.getAcceleration(&ax, &ay, &az);
-  movedHive = isMoved(ax, ay, az);
-
-  accelgyro.setSleepEnabled(1);*/
-
   //TILT sensor checking if hive is rolled
   if (digitalRead(TILT_PIN) == LOW) {
     movedHive = true;
@@ -1053,11 +1057,11 @@ void loop() {
   Serial.println(F("4G module POWER OFF"));
 
 
-  Serial.println(F("-------------------------Sleeping Start-------------------------"));
 
-  delay(100);
 
-  enterSleep();
+  Serial.println(F("Going to sleep"));
+  delay(500);
+  goToSleep();
+  Serial.println(F("Woke up"));
 
-  Serial.println(F("-------------------------Sleeping End-------------------------"));
 }
