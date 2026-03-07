@@ -7,6 +7,7 @@
 #include "HX711.h"
 #include <DFRobot_ENS160.h>
 #include "RTClib.h"
+#include <Adafruit_INA219.h>
 
 #include "string.h"
 
@@ -46,7 +47,8 @@ double vImag[SAMPLES];  //vector of imaginary values
 RTC_DS3231 rtc;
 volatile bool rtcAlarm = false;
 
-
+//INA219
+Adafruit_INA219 ina219;
 
 float default_accX = 0;
 float default_accY = 0;
@@ -185,7 +187,7 @@ float readWithRetry(float (*readFunc)(), float minValid, float maxValid, float e
 
 
 //Converts message to json
-String messageConvert(int temperatureIn, int humidityIn, int temperatureOut, int humidityOut, bool movedHive, int peakFrequency, uint16_t weight, uint16_t TVOC, uint16_t ECO2, bool cached, uint64_t timestamp) {
+String messageConvert(int temperatureIn, int humidityIn, int temperatureOut, int humidityOut, bool movedHive, int peakFrequency, uint16_t weight, uint16_t TVOC, uint16_t ECO2, float busVoltage, bool cached, uint64_t timestamp) {
 
   //change weight back to decimal format
   float decimalWeight = float(weight) / 100.0;
@@ -220,10 +222,17 @@ String messageConvert(int temperatureIn, int humidityIn, int temperatureOut, int
   message += String(temperatureOut);
   message += ", \"hO\": "; //humidityOut
   message += String(humidityOut);
-  message += ", \"tv\": "; //TVOC
-  message += String(TVOC);
-  message += ", \"e\": "; //ECO2
-  message += String(ECO2);
+  
+  if (TVOC != -1){
+    message += ", \"tv\": "; //TVOC
+    message += String(TVOC);
+    message += ", \"e\": "; //ECO2
+    message += String(ECO2);
+    message += ", \"bV\": "; //busVoltage
+    message += String(busVoltage);
+
+  }
+
 
   if (!cached) {
     message += "}";
@@ -656,6 +665,7 @@ bool sendCachedMessage(int index, uint64_t timestamp) {
     cacheMemory[index].weight,
     cacheMemory[lastWrite].TVOC,
     cacheMemory[lastWrite].ECO2,
+    -1,
     true,      // cached mode
     timestamp  
   );
@@ -727,16 +737,18 @@ void rtcISR() {
   rtcAlarm = true;
 }
 
-
-void goToSleep() {
+void scheduleSleep() {
 
   DateTime now = rtc.now();
-  DateTime future = now + TimeSpan(0, 0, 1, 0); //set to 15
-
+  DateTime future = now + TimeSpan(0, 0, 1, 0);
 
   rtc.clearAlarm(1);
   rtc.setAlarm1(future, DS3231_A1_Second);
   rtc.writeSqwPinMode(DS3231_OFF);
+}
+
+
+void goToSleep() {
 
   ADCSRA &= ~(1 << ADEN);   // ADC off
   power_adc_disable();
@@ -805,6 +817,10 @@ void setup() {
   //sleep init
   pinMode(INT_PIN, INPUT_PULLUP);
 
+  scheduleSleep();
+
+  //INA219
+  ina219.begin();
 
   //MAX9814 - calculation of sampling period
   samplingPeriod = round(1000000 * (1.0 / SAMPLING_FREQUENCY));
@@ -867,8 +883,9 @@ void loop() {
   int temperatureOut = 0;
   int humidityIn = 0;
   int temperatureIn = 0;
-  uint16_t TVOC = 0;
-  uint16_t ECO2 = 0;
+  uint16_t TVOC = -1;
+  uint16_t ECO2 = -1;
+  float busVoltage = -1;
 
 
   bool movedHive = false;
@@ -990,20 +1007,27 @@ void loop() {
 
 
 
-  //ENS160 measuring
-  ENS160.setTempAndHum(/*temperature=*/temperatureInF, /*humidity=*/humidityInF);
+  //ENS160 and INA219 measuring
+  DateTime now = rtc.now();
 
-  delay(200);
+  if (now.hour() % 6 == 0 && now.minute() < 15) {
+    ENS160.setTempAndHum(/*temperature=*/temperatureInF, /*humidity=*/humidityInF);
 
-  while (ENS160.getENS160Status() != 0) {
     delay(200);
+
+    while (ENS160.getENS160Status() != 0) {
+      delay(200);
+    }
+    TVOC = ENS160.getTVOC();
+    ECO2 = ENS160.getECO2();
+    ENS160.setPWRMode(ENS160_IDLE_MODE);
+
+    ina219.powerSave(false); 
+    delay(10);
+    busVoltage = ina219.getBusVoltage_V();
+    ina219.powerSave(true);
+    
   }
-
-  TVOC = ENS160.getTVOC();
-
-  ECO2 = ENS160.getECO2();
-
-  ENS160.setPWRMode(ENS160_IDLE_MODE);
 
 
 
@@ -1035,6 +1059,10 @@ void loop() {
   Serial.print(ECO2);
   Serial.println();
 
+  Serial.print(F("Battery Voltage [V]: "));
+  Serial.print(busVoltage);
+  Serial.println();
+
   Serial.print(F("Is hive moved?: "));
   if (movedHive) Serial.println(F("YES"));
   else Serial.println(F("NO"));
@@ -1042,7 +1070,7 @@ void loop() {
 
 
   //first false means we don't cache, second false can also be true (indicates which time is used for caching)
-  String message = messageConvert(temperatureIn, humidityIn, temperatureOut, humidityOut, movedHive, peakFrequency, weight, TVOC, ECO2, false, false);
+  String message = messageConvert(temperatureIn, humidityIn, temperatureOut, humidityOut, movedHive, peakFrequency, weight, TVOC, ECO2, busVoltage, false, false);
 
 
   //sending message
