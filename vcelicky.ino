@@ -737,6 +737,8 @@ void rtcISR() {
   rtcAlarm = true;
 }
 
+
+//Set time for next wake up 
 void scheduleSleep() {
 
   DateTime now = rtc.now();
@@ -747,7 +749,7 @@ void scheduleSleep() {
   rtc.writeSqwPinMode(DS3231_OFF);
 }
 
-
+//Handles sleep of arduino
 void goToSleep() {
 
   ADCSRA &= ~(1 << ADEN);   // ADC off
