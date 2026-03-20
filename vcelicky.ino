@@ -1035,9 +1035,9 @@ void loop() {
 
   //TILT sensor checking if hive is rolled
   if (digitalRead(TILT_PIN) == LOW) {
-    movedHive = false;
-  } else {
     movedHive = true;
+  } else {
+    movedHive = false;
   }
 
 
@@ -1104,8 +1104,8 @@ void loop() {
   Serial.println();
 
   Serial.print(F("Is hive moved?: "));
-  if (movedHive) Serial.println(F("NO"));
-  else Serial.println(F("YES"));
+  if (movedHive) Serial.println(F("YES"));
+  else Serial.println(F("NO"));
   Serial.println();
 
 
