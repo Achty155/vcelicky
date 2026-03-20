@@ -71,8 +71,8 @@ DFRobot_ENS160_I2C ENS160(&Wire, /*I2CAddr*/ 0x53);
 
 
 
-//For arduino sleep between measurements
-#define SLEEPING_ITERATIONS 112  //112 = (roughly 15 minutes)
+//Set desired sleep time
+#define SLEEP_TIME 10  //in minutes (for hours, seconds, days... go to scheduleSleep() function and set it there)
 
 
 //Set this according to your ThingsBoard
@@ -742,15 +742,47 @@ void rtcISR() {
 void scheduleSleep() {
 
   DateTime now = rtc.now();
-  DateTime future = now + TimeSpan(0, 0, 1, 0);
+
+
+  uint8_t sec  = now.second();
+  uint8_t min  = (now.minute() + SLEEP_TIME) % 60;
+  uint8_t hour = now.hour();
+  if (now.minute() + SLEEP_TIME >= 60) {
+    hour = (hour + 1) % 24;
+  }
+
+  DateTime future(now.year(), now.month(), now.day(), hour, min, sec);
 
   rtc.clearAlarm(1);
-  rtc.setAlarm1(future, DS3231_A1_Second);
+  rtc.clearAlarm(2);
+  rtc.disableAlarm(2);
   rtc.writeSqwPinMode(DS3231_OFF);
+
+  rtc.setAlarm1(future, DS3231_A1_Hour);
+
+  // DEBUG
+  Serial.print("NOW: ");
+  Serial.print(now.hour());
+  Serial.print(":");
+  Serial.print(now.minute());
+  Serial.print(":");
+  Serial.println(now.second());
+
+  Serial.print("WAKE AT: ");
+  Serial.print(future.hour());
+  Serial.print(":");
+  Serial.print(future.minute());
+  Serial.print(":");
+  Serial.println(future.second());
+
+
 }
+
 
 //Handles sleep of arduino
 void goToSleep() {
+
+  rtc.clearAlarm(1);
 
   ADCSRA &= ~(1 << ADEN);   // ADC off
   power_adc_disable();
@@ -763,12 +795,12 @@ void goToSleep() {
   set_sleep_mode(SLEEP_MODE_PWR_DOWN);
   sleep_enable();
 
-  attachInterrupt(digitalPinToInterrupt(INT_PIN), rtcISR, FALLING);
+  attachInterrupt(digitalPinToInterrupt(INT_PIN), rtcISR, FALLING); 
 
   sleep_cpu();   // MCU falls asleep here
 
   sleep_disable();
-  detachInterrupt(digitalPinToInterrupt(INT_PIN));
+  detachInterrupt(digitalPinToInterrupt(INT_PIN)); 
 
 
   power_all_enable();
@@ -813,13 +845,12 @@ void setup() {
   if (rtc.lostPower()) {
     Serial.println("RTC stratilo napajanie, nastavujem cas!");
     rtc.adjust(DateTime(F(__DATE__), F(__TIME__))); 
-    // nastaví čas podľa času kompilácie
+    // sets the time according to time of compilation
   }
 
   //sleep init
   pinMode(INT_PIN, INPUT_PULLUP);
 
-  scheduleSleep();
 
   //INA219
   ina219.begin();
@@ -892,13 +923,15 @@ void loop() {
 
   bool movedHive = false;
 
+  
+  scheduleSleep();
+
 
   //a7670 on
   digitalWrite(fourG_PIN, LOW);
   Serial.println(F("4G module POWER ON"));
 
-  //ENS160 on
-  ENS160.setPWRMode(ENS160_STANDARD_MODE);
+
 
   //DHT22 measuring of temperature and humidity
   digitalWrite(DnM_PIN, LOW);
@@ -1002,34 +1035,39 @@ void loop() {
 
   //TILT sensor checking if hive is rolled
   if (digitalRead(TILT_PIN) == LOW) {
-    movedHive = true;
-  } else {
     movedHive = false;
+  } else {
+    movedHive = true;
   }
 
 
-
-  //ENS160 and INA219 measuring
-  DateTime now = rtc.now();
+  //test
+  //ENS160 and INA219 measuring 
+  /*DateTime now = rtc.now();
 
   if (now.hour() % 6 == 0 && now.minute() < 15) {
-    ENS160.setTempAndHum(/*temperature=*/temperatureInF, /*humidity=*/humidityInF);
+  }*/
+  //ENS160 on
+  ENS160.setPWRMode(ENS160_STANDARD_MODE);
+  delay(500);
 
+  ENS160.setTempAndHum(/*temperature=*/temperatureInF, /*humidity=*/humidityInF);
+
+  delay(200);
+
+  while (ENS160.getENS160Status() != 0) {
     delay(200);
-
-    while (ENS160.getENS160Status() != 0) {
-      delay(200);
-    }
-    TVOC = ENS160.getTVOC();
-    ECO2 = ENS160.getECO2();
-    ENS160.setPWRMode(ENS160_IDLE_MODE);
-
-    ina219.powerSave(false); 
-    delay(10);
-    busVoltage = ina219.getBusVoltage_V();
-    ina219.powerSave(true);
-    
   }
+  TVOC = ENS160.getTVOC();
+  ECO2 = ENS160.getECO2();
+  ENS160.setPWRMode(ENS160_IDLE_MODE);
+
+  ina219.powerSave(false); 
+  delay(10);
+  busVoltage = ina219.getBusVoltage_V();
+  ina219.powerSave(true);
+    
+
 
 
 
@@ -1066,8 +1104,8 @@ void loop() {
   Serial.println();
 
   Serial.print(F("Is hive moved?: "));
-  if (movedHive) Serial.println(F("YES"));
-  else Serial.println(F("NO"));
+  if (movedHive) Serial.println(F("NO"));
+  else Serial.println(F("YES"));
   Serial.println();
 
 
@@ -1093,7 +1131,8 @@ void loop() {
 
 
   Serial.println(F("Going to sleep"));
-  delay(500);
+  delay(50);
+  rtcAlarm = false; // vynuluj soft flag
   goToSleep();
   Serial.println(F("Woke up"));
 
