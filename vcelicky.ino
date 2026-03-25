@@ -72,7 +72,7 @@ DFRobot_ENS160_I2C ENS160(&Wire, /*I2CAddr*/ 0x53);
 
 
 //Set desired sleep time
-#define SLEEP_TIME 10  //in minutes (for hours, seconds, days... go to scheduleSleep() function and set it there)
+#define SLEEP_TIME 15  //in minutes (for hours, seconds, days... go to scheduleSleep() function and set it there)
 
 
 //Set this according to your ThingsBoard
@@ -1127,7 +1127,7 @@ void loop() {
   else Serial.println(F("F Message sending failed."));
 
 
-  digitalWrite(fourG_PIN, LOW);
+  digitalWrite(fourG_PIN, HIGH);
   Serial.println(F("4G module POWER OFF"));
 
 
