@@ -209,7 +209,7 @@ String messageConvert(int temperatureIn, int humidityIn, int temperatureOut, int
 
   
   message += "\"tr\": "; //turnover
-  message += (movedHive ? "true" : "false");
+  message += (movedHive ? "1" : "0");
   message += ", \"f\": "; //frequency
   message += String(peakFrequency);
   message += ", \"w\": "; //weight
@@ -269,7 +269,7 @@ bool check_internet_connection() {
 
   if (pinStatus.indexOf("SIM PIN") >= 0) {
     Serial.println(F("SIM vyžaduje PIN, odosielam..."));
-    sendCommand("AT+CPIN=5965", 5000);
+    sendCommand("AT+CPIN=3723", 5000);  //5965 old pin
     readResponse();
   }
 
@@ -884,6 +884,9 @@ void setup() {
   //DnM
   pinMode(DnM_PIN, OUTPUT);
   digitalWrite(DnM_PIN, LOW);
+
+  //SW520D
+  pinMode(TILT_PIN, INPUT_PULLUP);
 
   delay(200);  
   Serial.println(F("HX711 - warming up..."));
