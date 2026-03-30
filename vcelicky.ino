@@ -1044,26 +1044,26 @@ void loop() {
   }
 
 
-  //test
   //ENS160 and INA219 measuring 
-  /*DateTime now = rtc.now();
+  DateTime now = rtc.now();
 
   if (now.hour() % 6 == 0 && now.minute() < 15) {
-  }*/
   //ENS160 on
-  ENS160.setPWRMode(ENS160_STANDARD_MODE);
-  delay(500);
+    ENS160.setPWRMode(ENS160_STANDARD_MODE);
+    delay(500);
 
-  ENS160.setTempAndHum(/*temperature=*/temperatureInF, /*humidity=*/humidityInF);
+    ENS160.setTempAndHum(/*temperature=*/temperatureInF, /*humidity=*/humidityInF);
 
-  delay(200);
-
-  while (ENS160.getENS160Status() != 0) {
     delay(200);
+
+    while (ENS160.getENS160Status() != 0) {
+      delay(200);
+    }
+    TVOC = ENS160.getTVOC();
+    ECO2 = ENS160.getECO2();
+    ENS160.setPWRMode(ENS160_IDLE_MODE);
+
   }
-  TVOC = ENS160.getTVOC();
-  ECO2 = ENS160.getECO2();
-  ENS160.setPWRMode(ENS160_IDLE_MODE);
 
   ina219.powerSave(false); 
   delay(10);
