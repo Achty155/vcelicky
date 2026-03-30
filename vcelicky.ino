@@ -222,15 +222,18 @@ String messageConvert(int temperatureIn, int humidityIn, int temperatureOut, int
   message += String(temperatureOut);
   message += ", \"hO\": "; //humidityOut
   message += String(humidityOut);
+
   
   if (TVOC != -1){
     message += ", \"tv\": "; //TVOC
     message += String(TVOC);
     message += ", \"e\": "; //ECO2
     message += String(ECO2);
+  }
+
+  if (busVoltage != -1){
     message += ", \"bV\": "; //busVoltage
     message += String(busVoltage);
-
   }
 
 
