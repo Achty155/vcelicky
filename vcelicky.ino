@@ -1050,7 +1050,8 @@ void loop() {
   //ENS160 and INA219 measuring 
   DateTime now = rtc.now();
 
-  if (now.hour() % 6 == 0 && now.minute() < 15) {
+  //if (now.hour() % 6 == 0 && now.minute() < 15) {
+  if (now.minute() < 15) {
   //ENS160 on
     ENS160.setPWRMode(ENS160_STANDARD_MODE);
     delay(500);
